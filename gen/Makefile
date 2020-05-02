@@ -62,7 +62,9 @@ full-clean: clean
 	rm -rf vendor $(GENERATE) $(STYLISH)
 
 $(MODEL_DIR): vendor/botocore
-	cp -rf vendor/botocore/botocore/data/ $@
+	git checkout -- model
+	git clean -fd model
+	rsync -a --delete --exclude-from=pinned-models.txt vendor/botocore/botocore/data/ $(MODEL_DIR)
 
 vendor/botocore:
 	git clone https://github.com/boto/botocore.git $@
