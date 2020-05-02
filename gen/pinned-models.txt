@@ -1,3 +1,14 @@
+# These are existing services and have priority
+/ec2/
+/glue/
+/iot/
+/medialive/
+/mediapackage/
+/pinpoint/
+/rds/
+/ssm/
+
+# These are new services that we want to bring on eventually
 /accessanalyzer/
 /amplify/
 /apigatewayv2/
