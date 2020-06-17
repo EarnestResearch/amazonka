@@ -52,7 +52,7 @@ fixtures =
                 ]
 
         , requestCopySnapshot $ copySnapshot "us-west-1" "snap-1a2b3c4d"
-            & csDescription ?~ "My_snapshot"
+            & copDescription ?~ "My_snapshot"
 
         ]
 
@@ -69,10 +69,10 @@ fixtures =
                     & rInstances .~
                         [ instance' "i-1a2b3c4d" "ami-1a2b3c4d" 0 C1_Medium
                             $(mkTime "2014-03-18T21:47:02+0000")
-                            (placement & pAvailabilityZone ?~ "us-west-2a"
-                                       & pTenancy          ?~ Default)
+                            (placement & plaAvailabilityZone ?~ "us-west-2a"
+                                       & plaTenancy          ?~ Default)
                             (monitoring & mState ?~ MSDisabled)
-                            X86_64 EBS HVM Xen
+                            X86_64 DTEBS HVM HTXen
                             (instanceState ISNRunning 16)
                                 & insPlatform            ?~ Windows
                                 & insClientToken         ?~ "ABCDE1234567890123"
