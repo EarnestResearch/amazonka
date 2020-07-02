@@ -780,7 +780,7 @@ waiterD n w = Exts.sfun (ident c) [] (unguarded rhs) Exts.noBinds
             Success -> var "AcceptSuccess"
             Failure -> var "AcceptFailure"
 
-    argument' x = go <$> maybeToList (notationE <$> _acceptArgument x)
+    argument' x = go <$> maybeToList (waiterNotationE <$> _acceptArgument x)
       where
         go = case _acceptExpect x of
             Textual {} ->

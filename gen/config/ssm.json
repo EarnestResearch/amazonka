@@ -1,6 +1,15 @@
 {
     "libraryName": "amazonka-ssm",
     "typeOverrides": {
+        "AssociationExecutionFilterKey": {
+            "enumPrefix": "AssocEFK"
+        },
+        "AssociationExecutionTargetsFilterKey": {
+            "enumPrefix": "AssocETFK"
+        },
+        "AttachmentHashType": {
+            "enumPrefix": "AttHash"
+        },
         "CommandFilterKey": {
             "enumPrefix": "Command"
         },

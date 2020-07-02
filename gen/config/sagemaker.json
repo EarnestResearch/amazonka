@@ -5,6 +5,9 @@
             "requiredFields": [
                 "NotebookInstanceStatus"
             ]
+        },
+        "MonitoringScheduleSortKey": {
+            "enumPrefix": "MSSK"
         }
     }
 }

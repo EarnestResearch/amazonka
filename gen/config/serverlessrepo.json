@@ -1,3 +1,8 @@
 {
-    "libraryName": "amazonka-serverlessrepo"
+    "libraryName": "amazonka-serverlessrepo",
+    "typeOverrides": {
+        "Status": {
+            "renamedTo": "RepoStatus"
+        }
+    }
 }

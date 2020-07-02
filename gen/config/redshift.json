@@ -8,6 +8,9 @@
             "requiredFields": [
                 "DefaultClusterParameters"
             ]
+        },
+        "UsageLimitLimitType": {
+            "enumPrefix": "ULLT"
         }
     }
 }

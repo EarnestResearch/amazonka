@@ -230,10 +230,10 @@
             }
         },
         "FleetType": {
-            "enumPrefix": "FT"
+            "enumPrefix": "Fleet"
         },
         "FleetEventType": {
-            "enumPrefix": "FET"
+            "enumPrefix": "FleetEvent"
         }
     }
 }

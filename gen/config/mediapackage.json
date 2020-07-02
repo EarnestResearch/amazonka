@@ -1,3 +1,14 @@
 {
-    "libraryName": "amazonka-mediapackage"
+    "libraryName": "amazonka-mediapackage",
+    "typeOverrides": {
+        "Status": {
+            "renamedTo": "TaskStatus"
+        },
+        "__AdTriggersElement": {
+            "renamedTo": "AdTriggersElement"
+        },
+        "__PeriodTriggersElement": {
+            "renamedTo": "PeriodTriggersElement"
+        }
+    }
 }

@@ -3,6 +3,9 @@
     "typeOverrides": {
         "Format": {
             "renamedTo": "DefinitionFormat"
+        },
+        "__EndpointTypesElement": {
+            "renamedTo": "EndpointTypesElement"
         }
     }
 }

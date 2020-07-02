@@ -1,3 +1,16 @@
 {
-    "libraryName": "amazonka-glue"
+    "libraryName": "amazonka-glue",
+    "typeOverrides": {
+        "DescribeDefaultClusterParametersResult": {
+            "requiredFields": [
+                "DefaultClusterParameters"
+            ]
+        },
+        "TaskRunSortColumnType": {
+            "enumPrefix": "TRSC"
+        },
+        "TransformSortColumnType": {
+            "enumPrefix": "TSC"
+        }
+    }
 }
