@@ -152,8 +152,8 @@ acronymPrefixes r (stripSuffix "Response" -> n)
         c | Text.length x >= 2 = Text.head (Text.drop 1 x)
           | otherwise          = Text.head x
 
-    xs = catMaybes [r1, r2, r3, r4, r5, r6]
-    ys = catMaybes [r1, r2, r3, r4, r6]
+    xs = catMaybes [r1, r2, r3, r4, r5, r6, r7]
+    ys = catMaybes [r1, r2, r3, r4, r6, r7]
 
     a  = camelAcronym n
     a' = upperAcronym n
@@ -182,3 +182,6 @@ acronymPrefixes r (stripSuffix "Response" -> n)
 
     -- SomeTestTType -> Som
     r6 = Text.take limit <$> listToMaybe (splitWords a)
+
+    -- Strip consonants as last resort
+    r7 = Just $ Text.filter (`notElem` ("aeiou" :: [Char])) n
