@@ -328,6 +328,33 @@ notationE = \case
         | fieldMaybe f  = Exts.infixApp (key False f) "." (var "_Just")
         | otherwise     = key False f
 
+waiterNotationE :: Notation Field -> Exp
+waiterNotationE = \case
+    NonEmptyText k        -> Exts.app (var "nonEmptyText") (label False k)
+    NonEmptyList k        -> label False k
+    Access      (k :| ks) -> labels k ks
+    Choice       x y      -> Exts.appFun (var "choice") [branch x, branch y]
+  where
+    branch x =
+        let e = notationE x
+         in Exts.paren (Exts.app (var (getterN e)) e)
+
+    labels k [] = label True k
+    labels k ks = foldl' f (label True k) ks
+      where
+         f e x = Exts.infixApp e "." (label True x)
+
+    label b = \case
+        Key  f -> key b f
+        Each f -> Exts.app (var "folding") . Exts.paren $ Exts.app (var "concatOf") (key True f)
+        Last f -> Exts.infixApp (key False f) "." (var "_last")
+
+    key False f = var (fieldLens f)
+    key True  f
+        | fieldMonoid f = key False f
+        | fieldMaybe f  = Exts.infixApp (key False f) "." (var "_Just")
+        | otherwise     = key False f
+
 requestD :: HasMetadata a Identity
          => Config
          -> a
