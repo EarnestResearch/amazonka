@@ -1,5 +1,8 @@
 {
     "libraryName": "amazonka-rds",
+    "ignoredWaiters": [
+        "DBClusterSnapshotDeleted"
+    ],
     "typeOverrides": {
         "DescribeEngineDefaultParametersResult": {
             "requiredFields": [

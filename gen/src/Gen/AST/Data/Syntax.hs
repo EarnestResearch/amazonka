@@ -303,6 +303,8 @@ getterN e = if go e then "^?" else "^."
     -- FIXME: doesn't support Maybe fields currently.
 notationE :: Notation Field -> Exp
 notationE = \case
+    EmptyText    k        -> Exts.app (var "emptyText") (label False k)
+    EmptyList    k        -> label False k
     NonEmptyText k        -> Exts.app (var "nonEmptyText") (label False k)
     NonEmptyList k        -> label False k
     Access      (k :| ks) -> labels k ks
@@ -330,6 +332,8 @@ notationE = \case
 
 waiterNotationE :: Notation Field -> Exp
 waiterNotationE = \case
+    EmptyText    k        -> Exts.app (var "emptyText") (label False k)
+    EmptyList    k        -> label False k
     NonEmptyText k        -> Exts.app (var "nonEmptyText") (label False k)
     NonEmptyList k        -> label False k
     Access      (k :| ks) -> labels k ks
@@ -777,6 +781,9 @@ waiterD n w = Exts.sfun (ident c) [] (unguarded rhs) Exts.noBinds
 
     match x =
         case (_acceptMatch x, _acceptArgument x) of
+            (_, Just (EmptyList _)) ->
+                Exts.appFun (var "matchEmpty") (expect x : criteria x : argument' x)
+
             (_, Just (NonEmptyList _)) ->
                 Exts.appFun (var "matchNonEmpty") (expect x : criteria x : argument' x)
 

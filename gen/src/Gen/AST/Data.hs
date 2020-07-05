@@ -297,6 +297,8 @@ notation m = go
   where
     go :: Shape Solved -> Notation Id -> Either Error (Notation Field)
     go s = \case
+        EmptyList k      -> EmptyList    <$> key s k
+        EmptyText k      -> EmptyText    <$> key s k
         NonEmptyList k   -> NonEmptyList <$> key s k
         NonEmptyText k   -> NonEmptyText <$> key s k
         Choice       x y -> Choice       <$> go s x <*> go s y

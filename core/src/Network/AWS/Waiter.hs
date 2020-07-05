@@ -24,11 +24,13 @@ module Network.AWS.Waiter
     -- * Matchers
     , matchAll
     , matchAny
+    , matchEmpty
     , matchNonEmpty
     , matchError
     , matchStatus
 
     -- * Util
+    , emptyText
     , nonEmptyText
     ) where
 
@@ -76,6 +78,9 @@ matchAny x a l = match (anyOf l (== x)) a
 matchNonEmpty :: Bool -> Accept -> Fold (Rs a) b -> Acceptor a
 matchNonEmpty x a l = match (\rs -> null (rs ^.. l) == x) a
 
+matchEmpty :: Bool -> Accept -> Fold (Rs a) b -> Acceptor a
+matchEmpty x a l = matchNonEmpty (not x) a l
+
 matchStatus :: Int -> Accept -> Acceptor a
 matchStatus x a _ = \case
     Right (s, _) | x == fromEnum s                          -> Just a
@@ -94,3 +99,6 @@ match f a _ = \case
 
 nonEmptyText :: Fold a Text -> Fold a Bool
 nonEmptyText f = f . to Text.null
+
+emptyText :: Fold a Text -> Fold a Bool
+emptyText f = nonEmptyText f . to not

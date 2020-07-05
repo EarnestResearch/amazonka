@@ -35,6 +35,8 @@ data Key a
 
 data Notation a
     = Access       (NonEmpty (Key a))
+    | EmptyList    (Key a)
+    | EmptyText    (Key a)
     | NonEmptyList (Key a)
     | NonEmptyText (Key a)
     | Choice       (Notation a) (Notation a)
@@ -50,7 +52,7 @@ parseNotation t = mappend msg `first` A.parseOnly expr1 t
         ++ Text.unpack t
         ++ ", with: "
 
-    expr0 = nonEmptyList <|> nonEmptyText <|> access
+    expr0 = emptyList <|> nonEmptyList <|> emptyText <|> nonEmptyText <|> access
     expr1 = choice <|> expr0
 
     choice = Choice
@@ -58,9 +60,19 @@ parseNotation t = mappend msg `first` A.parseOnly expr1 t
          <* A.string "||"
         <*> expr1
 
+    emptyList = EmptyList
+        <$> (A.string "length(" *> key1 <* A.char ')')
+        <*  strip (A.string "==")
+        <*  strip (A.string "`0`")
+
     nonEmptyList = NonEmptyList
         <$> (A.string "length(" *> key1 <* A.char ')')
         <*  strip (A.char '>')
+        <*  strip (A.string "`0`")
+
+    emptyText = EmptyText
+        <$> (A.string "length(" *> key0 <* A.char ')')
+        <*  strip (A.string "==")
         <*  strip (A.string "`0`")
 
     nonEmptyText = NonEmptyText
