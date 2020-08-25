@@ -364,7 +364,8 @@ getInternalAuth m = \case
                       -- not an EC2 instance, rethrow the previous error.
                       throwingM _MissingFileError f
                    -- proceed, check EC2 metadata for IAM information.
-                  fromProfile m
+                  catching_ _RetrievalError (fromProfile m) $
+                       pure emptyCredentials
 
 -- | Retrieve access key, secret key, and a session token from the default
 -- environment variables.
@@ -486,6 +487,11 @@ fromProfile m = do
         Left  e     -> throwM (RetrievalError e)
         _           -> throwM $
             InvalidIAMError "Unable to get default IAM Profile from EC2 metadata"
+
+emptyCredentials :: (Auth, Maybe Region)
+emptyCredentials = (auth, Nothing)
+    where
+        auth = Auth (AuthEnv "" (Sensitive "") Nothing Nothing) 
 
 -- | Lookup a specific IAM Profile by name from the local EC2 instance-data.
 --
