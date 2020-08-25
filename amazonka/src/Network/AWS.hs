@@ -38,7 +38,7 @@ module Network.AWS
     , HasEnv       (..)
 
     -- ** Credential Discovery
-    , BasicCredentials  (..)
+    , Credentials  (..)
     -- $discovery
 
     -- ** Supported Regions
@@ -167,8 +167,8 @@ import Control.Monad.Trans.Resource
 
 import Data.Conduit (ConduitM, transPipe)
 
+import Network.AWS.Auth
 import Network.AWS.Env             (Env, HasEnv (..), newEnv)
-import Network.AWS.Internal.Auth
 import Network.AWS.Internal.Body
 import Network.AWS.Internal.Logger
 import Network.AWS.Lens            ((^.))
