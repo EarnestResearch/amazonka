@@ -81,6 +81,7 @@ import System.Environment
 
 import qualified Data.ByteString.Char8 as BS8
 import qualified Data.Text             as Text
+import qualified Data.Text.IO          as TIO
 
 -- | Role arn to assume through web identity (see FromWebIdentityToken)
 envAwsRoleArn :: Text -- ^ AWS_ROLE_ARN
@@ -199,8 +200,9 @@ fromWebIdentityToken :: (MonadIO m, MonadCatch m) => m (Auth, Maybe Region)
 fromWebIdentityToken = do
     env <- newInternalEnv DiscoverBasic
     roleToAssume <- lookupEnvReq envAwsRoleArn <&> Text.pack
-    tokenIdentityFile <- lookupEnvReq envWebIdentityTokenFile <&> Text.pack
-    auth <- liftIO $ fetchAuthInBackground (renew env roleToAssume tokenIdentityFile)
+    tokenIdentityFile <- lookupEnvReq envWebIdentityTokenFile
+    token <- liftIO $ TIO.readFile tokenIdentityFile
+    auth <- liftIO $ fetchAuthInBackground (renew env roleToAssume token)
     reg  <- getRegion
     return (auth, reg)
      where
