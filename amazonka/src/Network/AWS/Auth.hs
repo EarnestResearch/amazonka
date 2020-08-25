@@ -198,7 +198,7 @@ getAuth m = \case
 
 fromWebIdentityToken :: (MonadIO m, MonadCatch m) => m (Auth, Maybe Region)
 fromWebIdentityToken = do
-    env <- newInternalEnv DiscoverBasic
+    env <- emptyCredentialsEnv
     roleToAssume <- lookupEnvReq envAwsRoleArn <&> Text.pack
     tokenIdentityFile <- lookupEnvReq envWebIdentityTokenFile
     token <- liftIO $ TIO.readFile tokenIdentityFile

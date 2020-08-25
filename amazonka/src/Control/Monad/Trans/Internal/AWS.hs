@@ -41,10 +41,6 @@ module Control.Monad.Trans.Internal.AWS
     , HasEnv       (..)
     , askEnv
 
-    -- ** Credential Discovery
-    , BasicCredentials  (..)
-    -- $discovery
-
     -- ** Supported Regions
     , Region       (..)
 

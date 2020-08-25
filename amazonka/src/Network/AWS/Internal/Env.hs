@@ -19,8 +19,7 @@
 module Network.AWS.Internal.Env
     (
     -- * Creating the Environment
-      newInternalEnv
-    , newInternalEnvWith
+      emptyCredentialsEnv
 
     , Env      (..)
     , HasEnv   (..)
@@ -186,30 +185,17 @@ timeout s = local (override (serviceTimeout ?~ s))
 -- Throws 'AuthError' when environment variables or IAM profiles cannot be read.
 --
 -- /See:/ 'newEnvWith'.
-newInternalEnv :: (Applicative m, MonadIO m, MonadCatch m)
-       => BasicCredentials -- ^ Credential discovery mechanism.
-       -> m Env
-newInternalEnv c =
-    liftIO (newManager tlsManagerSettings)
-        >>= newInternalEnvWith c Nothing
+emptyCredentialsEnv :: (Applicative m, MonadIO m, MonadCatch m)
+       => m Env
+emptyCredentialsEnv = do
+    manager <- liftIO $ newManager tlsManagerSettings
+    (auth, fromMaybe NorthVirginia -> region) <- emptyCredentials
+    Env region logger (retryConnectionFailure 3) mempty manager
+        <$> liftIO (newIORef Nothing)
+        <*> pure auth
+    where
+        logger _ _ = pure ()
 
--- | /See:/ 'newEnv'
---
--- The 'Maybe' 'Bool' parameter is used by the EC2 instance check. By passing a
--- value of 'Nothing', the check will be performed. 'Just' 'True' would cause
--- the check to be skipped and the host treated as an EC2 instance.
---
--- Throws 'AuthError' when environment variables or IAM profiles cannot be read.
-newInternalEnvWith :: (Applicative m, MonadIO m, MonadCatch m)
-           => BasicCredentials -- ^ Credential discovery mechanism.
-           -> Maybe Bool  -- ^ Preload the EC2 instance check.
-           -> Manager
-           -> m Env
-newInternalEnvWith c p m = do
-    (a, fromMaybe NorthVirginia -> r) <- getInternalAuth m c
-    Env r (\_ _ -> pure ()) (retryConnectionFailure 3) mempty m
-        <$> liftIO (newIORef p)
-        <*> pure a
 
 -- | Retry the subset of transport specific errors encompassing connection
 -- failure up to the specific number of times.

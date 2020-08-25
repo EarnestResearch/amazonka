@@ -22,8 +22,7 @@ module Network.AWS.Internal.Auth
     (
     -- * Authentication
     -- ** Retrieving Authentication
-      getInternalAuth
-    , BasicCredentials  (..)
+      emptyCredentials
     , Auth         (..)
     , fetchAuthInBackground
 
@@ -78,8 +77,8 @@ import Data.Time  (diffUTCTime, getCurrentTime)
 import Network.AWS.Data.JSON
 import Network.AWS.Data.Log
 import Network.AWS.EC2.Metadata
-import Network.AWS.Lens         (Prism', catching, catching_, exception, prism,
-                                 throwingM, (<&>), _IOException)
+import Network.AWS.Lens         (Prism', catching_, exception, prism, (<&>),
+                                 _IOException)
 import Network.AWS.Prelude
 import Network.HTTP.Conduit
 
@@ -109,6 +108,10 @@ envSessionToken = "AWS_SESSION_TOKEN"
 -- | Default credentials profile environment variable.
 envProfile :: Text -- ^ AWS_PROFILE
 envProfile = "AWS_PROFILE"
+
+-- | Legacy style default region environment variable
+envDefaultRegion :: Text -- ^ AWS_DEFAULT_REGION
+envDefaultRegion = "AWS_DEFAULT_REGION"
 
 -- | Default region environment variable
 envVarRegion :: Text -- ^ AWS_REGION
@@ -183,75 +186,6 @@ fromTemporarySession :: AccessKey
                      -> Auth
 fromTemporarySession a s t e =
     Auth (AuthEnv a (Sensitive s) (Just (Sensitive t)) (Just (Time e)))
-
--- | Determines how AuthN/AuthZ information is retrieved.
-data BasicCredentials
-    = FromKeysBasic AccessKey SecretKey
-      -- ^ Explicit access and secret keys. See 'fromKeys'.
-
-    | FromSessionBasic AccessKey SecretKey SessionToken
-      -- ^ Explicit access key, secret key and a session token. See 'fromSession'.
-
-    | FromEnvBasic Text Text (Maybe Text) (Maybe Text)
-      -- ^ Lookup specific environment variables for access key, secret key,
-      -- an optional session token, and an optional region, respectively.
-
-    | FromProfileBasic Text
-      -- ^ An IAM Profile name to lookup from the local EC2 instance-data.
-      -- Environment variables to lookup for the access key, secret key and
-      -- optional session token.
-
-    | FromFileBasic Text FilePath
-      -- ^ A credentials profile name (the INI section) and the path to the AWS
-      -- <http://blogs.aws.amazon.com/security/post/Tx3D6U6WSFGOK2H/A-New-and-Standardized-Way-to-Manage-Credentials-in-the-AWS-SDKs credentials> file.
-
-    | FromContainerBasic
-      -- ^ Obtain credentials by attempting to contact the ECS container agent
-      -- at <http://169.254.170.2> using the path in 'envContainerCredentialsURI'.
-      -- See <http://docs.aws.amazon.com/AmazonECS/latest/developerguide/task-iam-roles.html IAM Roles for Tasks>
-      -- in the AWS documentation for more information.
-
-    | DiscoverBasic
-      -- ^ Attempt credentials discovery via the following steps:
-      --
-      -- * Read the 'envAccessKey', 'envSecretKey', and 'envRegion' from the environment if they are set.
-      --
-      -- * Read the credentials file if 'credFile' exists.
-      --
-      -- * Obtain credentials from the ECS container agent if
-      -- 'envContainerCredentialsURI' is set.
-      --
-      -- * Retrieve the first available IAM profile and read
-      -- the 'Region' from the instance identity document, if running on EC2.
-      --
-      -- An attempt is made to resolve <http://instance-data> rather than directly
-      -- retrieving <http://169.254.169.254> for IAM profile information.
-      -- This assists in ensuring the DNS lookup terminates promptly if not
-      -- running on EC2.
-      deriving (Eq)
-
-instance ToLog BasicCredentials where
-    build = \case
-        FromKeysBasic    a _ ->
-            "FromKeysBasic " <> build a <> " ****"
-        FromSessionBasic a _ _ ->
-            "FromSessionBasic " <> build a <> " **** ****"
-        FromEnvBasic     a s t r ->
-            "FromEnvBasic " <> build a <> " " <> build s <> " " <> m t <> " " <> m r
-        FromProfileBasic n ->
-            "FromProfileBasic " <> build n
-        FromFileBasic    n f ->
-            "FromFileBasic " <> build n <> " " <> build f
-        FromContainerBasic ->
-            "FromContainerBasic"
-        DiscoverBasic ->
-            "DiscoverBasic"
-      where
-        m (Just x) = "(Just " <> build x <> ")"
-        m Nothing  = "Nothing"
-
-instance Show BasicCredentials where
-    show = BS8.unpack . toBS . build
 
 -- | An error thrown when attempting to read AuthN/AuthZ information.
 data AuthError
@@ -334,38 +268,6 @@ instance AsAuthError AuthError where
     _InvalidIAMError = prism InvalidIAMError $ \case
         InvalidIAMError  e -> Right e
         x                  -> Left  x
-
--- | Retrieve authentication information via the specified 'Credentials' mechanism.
---
--- Throws 'AuthError' when environment variables or IAM profiles cannot be read,
--- and credentials files are invalid or cannot be found.
-getInternalAuth :: (Applicative m, MonadIO m, MonadCatch m)
-        => Manager
-        -> BasicCredentials
-        -> m (Auth, Maybe Region)
-getInternalAuth m = \case
-    FromKeysBasic    a s     -> return (fromKeys a s, Nothing)
-    FromSessionBasic a s t   -> return (fromSession a s t, Nothing)
-    FromEnvBasic     a s t r -> fromEnvKeys a s t r
-    FromProfileBasic n       -> fromProfileName m n
-    FromFileBasic    n f     -> fromFilePath n f
-    FromContainerBasic       -> fromContainer m
-    DiscoverBasic            ->
-        -- Don't try and catch InvalidFileError, or InvalidIAMProfile,
-        -- let both errors propagate.
-        catching_ _MissingEnvError fromEnv $
-            -- proceed, missing env keys
-            catching _MissingFileError fromFile $ \f ->
-                -- proceed, missing credentials file
-                catching_ _MissingEnvError (fromContainer m) $ do
-                  -- proceed, missing env key
-                  p <- isEC2 m
-                  unless p $
-                      -- not an EC2 instance, rethrow the previous error.
-                      throwingM _MissingFileError f
-                   -- proceed, check EC2 metadata for IAM information.
-                  catching_ _RetrievalError (fromProfile m) $
-                       pure emptyCredentials
 
 -- | Retrieve access key, secret key, and a session token from the default
 -- environment variables.
@@ -488,10 +390,23 @@ fromProfile m = do
         _           -> throwM $
             InvalidIAMError "Unable to get default IAM Profile from EC2 metadata"
 
-emptyCredentials :: (Auth, Maybe Region)
-emptyCredentials = (auth, Nothing)
+emptyCredentials :: MonadIO m => m (Auth, Maybe Region)
+emptyCredentials = do
+    region' <- getRegion
+    pure (auth, region')
     where
-        auth = Auth (AuthEnv "" (Sensitive "") Nothing Nothing) 
+        auth = Auth (AuthEnv "" (Sensitive "") Nothing Nothing)
+
+        getRegion :: MonadIO m => m (Maybe Region)
+        getRegion = do
+            regionMaybe <- (liftIO . lookupEnv . Text.unpack) envVarRegion
+            case regionMaybe of
+                Just region' -> pure $ either (const Nothing) Just (fromText $ Text.pack region')
+                Nothing -> do
+                    defaultRegionMaybe <- (liftIO . lookupEnv . Text.unpack) envDefaultRegion
+                    case defaultRegionMaybe of
+                        Just defaultRegion -> pure $ either (const Nothing) Just (fromText $ Text.pack defaultRegion)
+                        Nothing -> pure Nothing
 
 -- | Lookup a specific IAM Profile by name from the local EC2 instance-data.
 --
