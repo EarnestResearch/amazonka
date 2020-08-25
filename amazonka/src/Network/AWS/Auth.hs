@@ -206,7 +206,7 @@ fromWebIdentityToken = do
      where
         renew :: Env -> Text -> Text -> IO AuthEnv
         renew env roleToAssume tokenIdentityFile = do
-            let assumeRoleReq = assumeRoleWithWebIdentity roleToAssume "" tokenIdentityFile
+            let assumeRoleReq = assumeRoleWithWebIdentity roleToAssume "amazonka" tokenIdentityFile
             assumeRoleResp <- runResourceT $ runAWST env $ send assumeRoleReq
             maybe (throwM . InvalidIAMError $ "No credentials returned") pure $ assumeRoleResp ^. arwwirsCredentials
 
