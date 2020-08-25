@@ -1,41 +1,45 @@
-{-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE FlexibleInstances #-}
-{-# LANGUAGE RankNTypes        #-}
+{-# LANGUAGE BangPatterns               #-}
+{-# LANGUAGE CPP                        #-}
+{-# LANGUAGE ConstraintKinds            #-}
+{-# LANGUAGE FlexibleContexts           #-}
+{-# LANGUAGE FlexibleInstances          #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE MultiParamTypeClasses      #-}
+{-# LANGUAGE RankNTypes                 #-}
+{-# LANGUAGE RecordWildCards            #-}
+{-# LANGUAGE TypeFamilies               #-}
+{-# LANGUAGE UndecidableInstances       #-}
 
 {-# OPTIONS_GHC -fno-warn-duplicate-exports #-}
 
 -- |
--- Module      : Network.AWS
+-- Module      : Control.Monad.Trans.Internal.AWS
 -- Copyright   : (c) 2013-2018 Brendan Hay
 -- License     : Mozilla Public License, v. 2.0.
 -- Maintainer  : Brendan Hay <brendan.g.hay+amazonka@gmail.com>
 -- Stability   : provisional
 -- Portability : non-portable (GHC extensions)
 --
--- This module provides a simple 'AWS' monad and a set of operations which
--- can be performed against remote Amazon Web Services APIs, for use with the types
--- supplied by the various @amazonka-*@ libraries.
+-- The 'AWST' transformer provides the environment required to perform AWS
+-- operations. The transformer is intended to be used directly
+-- or embedded as a layer within a transformer stack.
 --
--- A 'MonadAWS' typeclass is used as a function constraint to provide automatic
--- lifting of functions when embedding 'AWS' as a layer inside your own
--- application stack.
---
--- "Control.Monad.Trans.AWS" contains the underlying 'AWST' transformer.
-module Network.AWS
+-- "Network.AWS" contains an 'IO' specialised version of 'AWST' with a typeclass
+-- to assist in automatically lifting operations.
+module Control.Monad.Trans.Internal.AWS
     (
-    -- * Usage
-    -- $usage
-
     -- * Running AWS Actions
-      AWS
-    , MonadAWS    (..)
-    , runAWS
+      AWST
+    , AWST'
+    , runAWST
     , runResourceT
+    , AWSConstraint
 
     -- * Authentication and Environment
-    , newEnv
+    , newInternalEnv
     , Env
     , HasEnv       (..)
+    , askEnv
 
     -- ** Credential Discovery
     , BasicCredentials  (..)
@@ -63,8 +67,8 @@ module Network.AWS
     -- $service
 
     -- *** Overriding Defaults
-    , Env.configure
-    , Env.override
+    , configure
+    , override
 
     -- *** Scoped Actions
     , reconfigure
@@ -78,7 +82,6 @@ module Network.AWS
     -- *** Request Bodies
     , ToHashedBody (..)
     , hashedFile
-    , hashedFileRange
     , hashedBody
 
     -- *** Chunked Request Bodies
@@ -86,7 +89,6 @@ module Network.AWS
     , ChunkSize    (..)
     , defaultChunkSize
     , chunkedFile
-    , chunkedFileRange
     , unsafeChunkedBody
 
     -- *** Response Bodies
@@ -101,6 +103,7 @@ module Network.AWS
     -- $presigning
 
     , presignURL
+    , presign
 
     -- * EC2 Instance Metadata
     -- $metadata
@@ -122,14 +125,14 @@ module Network.AWS
     , AsError      (..)
     , AsAuthError  (..)
 
-    , AWST.trying
-    , AWST.catching
+    , trying
+    , catching
 
     -- ** Building Error Prisms
-    , AWST._MatchServiceError
-    , AWST.hasService
-    , AWST.hasStatus
-    , AWST.hasCode
+    , Error._MatchServiceError
+    , Error.hasService
+    , Error.hasStatus
+    , Error.hasCode
 
     -- * Logging
     -- $logging
@@ -142,7 +145,7 @@ module Network.AWS
 
     -- ** Endpoints
     , Endpoint
-    , AWST.setEndpoint
+    , setEndpoint
 
     -- * Re-exported Types
     , module Network.AWS.Types
@@ -154,206 +157,257 @@ module Network.AWS
     , RsBody
     ) where
 
-import Control.Monad.Catch          (MonadCatch)
-import Control.Monad.IO.Class       (MonadIO)
-import Control.Monad.Trans.AWS      (AWST)
-import Control.Monad.Trans.Class    (lift)
-import Control.Monad.Trans.Except   (ExceptT)
-import Control.Monad.Trans.Identity (IdentityT)
-import Control.Monad.Trans.List     (ListT)
-import Control.Monad.Trans.Maybe    (MaybeT)
-import Control.Monad.Trans.Reader   (ReaderT)
+import Control.Applicative
+import Control.Monad
+import Control.Monad.Base
+import Control.Monad.Catch
+import Control.Monad.Error.Class    (MonadError (..))
+import Control.Monad.IO.Unlift
+import Control.Monad.Morph
+import Control.Monad.Primitive
+import Control.Monad.Reader
+import Control.Monad.State.Class
+import Control.Monad.Trans.Control
 import Control.Monad.Trans.Resource
+import Control.Monad.Writer.Class
+#if MIN_VERSION_base(4,9,0)
+import Control.Monad.Fail
+#endif
 
-import Data.Conduit (ConduitM, transPipe)
+import Data.Conduit      hiding (await)
+import Data.Conduit.Lazy (MonadActive (..))
+import Data.IORef
+import Data.Monoid
 
-import Network.AWS.Env             (Env, HasEnv (..), newEnv)
 import Network.AWS.Internal.Auth
 import Network.AWS.Internal.Body
+import Network.AWS.Internal.Env
+import Network.AWS.Internal.HTTP
 import Network.AWS.Internal.Logger
-import Network.AWS.Lens            ((^.))
-import Network.AWS.Pager           (AWSPager)
-import Network.AWS.Prelude
+import Network.AWS.Lens            (catching, throwingM, trying, view, (^.))
+import Network.AWS.Pager           (AWSPager (..))
+import Network.AWS.Prelude         as AWS
+import Network.AWS.Request         (requestURL)
 import Network.AWS.Types           hiding (LogLevel (..))
-import Network.AWS.Waiter          (Wait)
+import Network.AWS.Waiter          (Accept, Wait)
 
-import qualified Control.Monad.RWS.Lazy      as LRW
-import qualified Control.Monad.RWS.Strict    as RW
-import qualified Control.Monad.State.Lazy    as LS
-import qualified Control.Monad.State.Strict  as S
-import qualified Control.Monad.Trans.AWS     as AWST
-import qualified Control.Monad.Writer.Lazy   as LW
-import qualified Control.Monad.Writer.Strict as W
-import qualified Network.AWS.EC2.Metadata    as EC2
-import qualified Network.AWS.Internal.Env    as Env
+import qualified Network.AWS.EC2.Metadata as EC2
+import qualified Network.AWS.Error        as Error
+import qualified Network.AWS.Presign      as Sign
 
--- | A specialisation of the 'AWST' transformer.
-type AWS = AWST (ResourceT IO)
+type AWST = AWST' Env
 
--- | Monads in which 'AWS' actions may be embedded.
-class ( Functor     m
-      , Applicative m
-      , Monad       m
-      , MonadIO     m
-      , MonadCatch  m
-      ) => MonadAWS m where
-    -- | Lift a computation to the 'AWS' monad.
-    liftAWS :: AWS a -> m a
+newtype AWST' r m a = AWST' { unAWST :: ReaderT r m a }
+    deriving
+        ( Functor
+        , Applicative
+        , Alternative
+        , Monad
+        , MonadPlus
+        , MonadIO
+        , MonadActive
+        , MonadTrans
+#if MIN_VERSION_base(4,9,0)
+        , MonadFail
+#endif
+        )
 
-instance (MonadResource m, MonadCatch m) => MonadAWS (AWST m) where
-    liftAWS action = do
-        env <- AWST.askEnv
-        liftResourceT (AWST.runAWST env action)
+instance MonadThrow m => MonadThrow (AWST' r m) where
+    throwM = lift . throwM
 
-instance MonadAWS m => MonadAWS (IdentityT   m) where liftAWS = lift . liftAWS
-instance MonadAWS m => MonadAWS (ListT       m) where liftAWS = lift . liftAWS
-instance MonadAWS m => MonadAWS (MaybeT      m) where liftAWS = lift . liftAWS
-instance MonadAWS m => MonadAWS (ExceptT   e m) where liftAWS = lift . liftAWS
-instance MonadAWS m => MonadAWS (ReaderT   r m) where liftAWS = lift . liftAWS
-instance MonadAWS m => MonadAWS (S.StateT  s m) where liftAWS = lift . liftAWS
-instance MonadAWS m => MonadAWS (LS.StateT s m) where liftAWS = lift . liftAWS
+instance MonadCatch m => MonadCatch (AWST' r m) where
+    catch (AWST' m) f = AWST' (catch m (unAWST . f))
 
-instance (Monoid w, MonadAWS m) => MonadAWS (W.WriterT w m) where
-    liftAWS = lift . liftAWS
+instance MonadMask m => MonadMask (AWST' r m) where
+    mask a = AWST' $ mask $ \u ->
+        unAWST $ a (AWST' . u . unAWST)
 
-instance (Monoid w, MonadAWS m) => MonadAWS (LW.WriterT w m) where
-    liftAWS = lift . liftAWS
+    uninterruptibleMask a = AWST' $ uninterruptibleMask $ \u ->
+        unAWST $ a (AWST' . u . unAWST)
 
-instance (Monoid w, MonadAWS m) => MonadAWS (RW.RWST r w s m) where
-    liftAWS = lift . liftAWS
+#if MIN_VERSION_exceptions(0,10,0)
+    generalBracket acquire rel action = AWST' $
+        generalBracket
+            (unAWST acquire)
+            (\a ex -> unAWST $ rel a ex)
+            (\a -> unAWST $ action a)
+#endif
 
-instance (Monoid w, MonadAWS m) => MonadAWS (LRW.RWST r w s m) where
-    liftAWS = lift . liftAWS
 
--- | Run the 'AWS' monad. Any outstanding HTTP responses' 'ResumableSource' will
--- be closed when the 'ResourceT' computation is unwrapped with 'runResourceT'.
---
--- Throws 'Error', which will include 'HTTPExceptions', serialisation errors,
--- or any particular errors returned by the respective AWS service.
---
--- /See:/ 'AWST.runAWST', 'runResourceT'.
-runAWS :: (MonadResource m, HasEnv r) => r -> AWS a -> m a
-runAWS e = liftResourceT . AWST.runAWST (e ^. environment)
+instance MonadBase b m => MonadBase b (AWST' r m) where
+    liftBase = liftBaseDefault
 
--- | Scope an action such that all requests belonging to the supplied service
--- will use this configuration instead of the default.
---
--- It's suggested you use a modified version of the default service, such
--- as @Network.AWS.DynamoDB.dynamoDB@.
---
--- /See:/ 'Env.configure'.
-reconfigure :: MonadAWS m => Service -> AWS a -> m a
-reconfigure s = liftAWS . AWST.reconfigure s
+instance MonadTransControl (AWST' r) where
+    type StT (AWST' r) a = StT (ReaderT r) a
 
--- | Scope an action within the specific 'Region'.
-within :: MonadAWS m => Region -> AWS a -> m a
-within r = liftAWS . AWST.within r
+    liftWith = defaultLiftWith AWST' unAWST
+    restoreT = defaultRestoreT AWST'
 
--- | Scope an action such that any retry logic for the 'Service' is
--- ignored and any requests will at most be sent once.
-once :: MonadAWS m => AWS a -> m a
-once = liftAWS . AWST.once
+instance MonadBaseControl b m => MonadBaseControl b (AWST' r m) where
+    type StM (AWST' r m) a = ComposeSt (AWST' r) m a
 
--- | Scope an action such that any HTTP response will use this timeout value.
-timeout :: MonadAWS m => Seconds -> AWS a -> m a
-timeout s = liftAWS . AWST.timeout s
+    liftBaseWith = defaultLiftBaseWith
+    restoreM     = defaultRestoreM
+
+instance MonadUnliftIO m => MonadUnliftIO (AWST' r m) where
+#if MIN_VERSION_unliftio_core(0,2,0)
+    {-# INLINE withRunInIO #-}
+    withRunInIO inner =
+        AWST' $
+        withRunInIO $ \run ->
+        inner (run . unAWST)
+#else
+    {-# INLINE askUnliftIO #-}
+    askUnliftIO = AWST' $ (\(UnliftIO f) -> UnliftIO $ f . unAWST)
+        <$> askUnliftIO
+#endif
+
+instance MonadResource m => MonadResource (AWST' r m) where
+    liftResourceT = lift . liftResourceT
+
+instance MonadError e m => MonadError e (AWST' r m) where
+    throwError     = lift . throwError
+    catchError m f = AWST' (unAWST m `catchError` (unAWST . f))
+
+instance Monad m => MonadReader r (AWST' r m) where
+    ask     = AWST' ask
+    local f = AWST' . local f . unAWST
+    reader  = AWST' . reader
+
+instance MonadWriter w m => MonadWriter w (AWST' r m) where
+    writer = lift . writer
+    tell   = lift . tell
+    listen = AWST' . listen . unAWST
+    pass   = AWST' . pass   . unAWST
+
+instance MonadState s m => MonadState s (AWST' r m) where
+    get = lift get
+    put = lift . put
+
+instance MFunctor (AWST' r) where
+    hoist nat = AWST' . hoist nat . unAWST
+
+instance PrimMonad m => PrimMonad (AWST' r m) where
+    type PrimState (AWST' r m) = PrimState m
+    primitive = AWST' . primitive
+
+-- | Run an 'AWST' action with the specified environment.
+runAWST :: HasEnv r => r -> AWST' r m a -> m a
+runAWST r (AWST' m) = runReaderT m r
+
+askEnv :: (Monad m, HasEnv r) => AWST' r m Env
+askEnv = AWST' (asks (^. environment))
+
+-- | An alias for the constraints required to send requests,
+-- which 'AWST' implicitly fulfils.
+type AWSConstraint r m =
+    ( MonadThrow     m
+    , MonadCatch     m
+    , MonadResource  m
+    , MonadReader  r m
+    , HasEnv       r
+    )
 
 -- | Send a request, returning the associated response if successful.
-send :: (MonadAWS m, AWSRequest a) => a -> m (Rs a)
-send = liftAWS . AWST.send
+--
+-- Throws 'Error'.
+send :: (AWSConstraint r m, AWSRequest a)
+     => a
+     -> m (Rs a)
+send = retrier >=> fmap snd . hoistError
 
 -- | Repeatedly send a request, automatically setting markers and
 -- paginating over multiple responses while available.
-paginate :: (MonadAWS m, AWSPager a) => a -> ConduitM () (Rs a) m ()
-paginate x = transPipe liftAWS $ AWST.paginate x
+--
+-- Throws 'Error'.
+paginate :: (AWSConstraint r m, AWSPager a)
+         => a
+         -> ConduitM () (Rs a) m ()
+paginate = go
+  where
+    go !x = do
+        !y <- lift $ send x
+        yield y
+        maybe (pure ()) go (page x y)
 
 -- | Poll the API with the supplied request until a specific 'Wait' condition
 -- is fulfilled.
-await :: (MonadAWS m, AWSRequest a) => Wait a -> a -> m AWST.Accept
-await w = liftAWS . AWST.await w
+--
+-- Throws 'Error'.
+await :: (AWSConstraint r m, AWSRequest a)
+      => Wait a
+      -> a
+      -> m Accept
+await w = waiter w >=> hoistError
 
 -- | Presign an URL that is valid from the specified time until the
 -- number of seconds expiry has elapsed.
-presignURL :: (MonadAWS m, AWSRequest a)
+presignURL :: ( MonadIO m
+              , MonadReader r m
+              , HasEnv r
+              , AWSRequest a
+              )
            => UTCTime     -- ^ Signing time.
            -> Seconds     -- ^ Expiry time.
            -> a           -- ^ Request to presign.
            -> m ByteString
-presignURL t ex = liftAWS . AWST.presignURL t ex
+presignURL ts ex = fmap requestURL . presign ts ex
+
+-- | Presign an HTTP request that is valid from the specified time until the
+-- number of seconds expiry has elapsed.
+presign :: ( MonadIO m
+           , MonadReader r m
+           , HasEnv r
+           , AWSRequest a
+           )
+        => UTCTime     -- ^ Signing time.
+        -> Seconds     -- ^ Expiry time.
+        -> a           -- ^ Request to presign.
+        -> m ClientRequest
+presign ts ex x = do
+    Env{..} <- view environment
+    Sign.presignWith (appEndo (getDual _envOverride)) _envAuth _envRegion ts ex x
 
 -- | Test whether the underlying host is running on EC2.
--- This is memoised and an HTTP request is made to the host's metadata
--- endpoint for the first call only.
-isEC2 :: MonadAWS m => m Bool
-isEC2 = liftAWS AWST.isEC2
+-- This is memoised and any external check occurs for the first invocation only.
+isEC2 :: (MonadIO m, MonadReader r m, HasEnv r) => m Bool
+isEC2 = do
+    ref <- view envEC2
+    mp  <- liftIO (readIORef ref)
+    case mp of
+        Just p  -> return p
+        Nothing -> do
+            m  <- view envManager
+            !p <- EC2.isEC2 m
+            liftIO (atomicWriteIORef ref (Just p))
+            return p
 
 -- | Retrieve the specified 'Dynamic' data.
-dynamic :: MonadAWS m => EC2.Dynamic -> m ByteString
-dynamic = liftAWS . AWST.dynamic
+--
+-- Throws 'HttpException'.
+dynamic :: (MonadIO m, MonadThrow m, MonadReader r m, HasEnv r)
+        => EC2.Dynamic
+        -> m ByteString
+dynamic d = view envManager >>= flip EC2.dynamic d
 
 -- | Retrieve the specified 'Metadata'.
-metadata :: MonadAWS m => EC2.Metadata -> m ByteString
-metadata = liftAWS . AWST.metadata
+--
+-- Throws 'HttpException'.
+metadata :: (MonadIO m, MonadThrow m, MonadReader r m, HasEnv r)
+         => EC2.Metadata
+         -> m ByteString
+metadata m = view envManager >>= flip EC2.metadata m
 
 -- | Retrieve the user data. Returns 'Nothing' if no user data is assigned
 -- to the instance.
-userdata :: MonadAWS m => m (Maybe ByteString)
-userdata = liftAWS AWST.userdata
+--
+-- Throws 'HttpException'.
+userdata :: (MonadIO m, MonadCatch m, MonadReader r m, HasEnv r)
+         => m (Maybe ByteString)
+userdata = view envManager >>= EC2.userdata
 
-{- $usage
-The key functions dealing with the request/response lifecycle are:
-
-* 'send'
-
-* 'paginate'
-
-* 'await'
-
-These functions have constraints that types from the @amazonka-*@ libraries
-satisfy. To utilise these, you will need to specify what 'Region' you wish to
-operate in and your Amazon credentials for AuthN/AuthZ purposes.
-
-'Credentials' can be supplied in a number of ways. Either via explicit keys,
-via session profiles, or have Amazonka retrieve the credentials from an
-underlying IAM Role/Profile.
-
-As a basic example, you might wish to store an object in an S3 bucket using
-<http://hackage.haskell.org/package/amazonka-s3 amazonka-s3>:
-
-@
-{-# LANGUAGE OverloadedStrings #-}
-
-import Control.Lens
-import Network.AWS
-import Network.AWS.S3
-import System.IO
-
-example :: IO PutObjectResponse
-example = do
-    -- A new 'Logger' to replace the default noop logger is created, with the logger
-    -- set to print debug information and errors to stdout:
-    lgr  <- newLogger Debug stdout
-
-    -- To specify configuration preferences, 'newEnv' is used to create a new
-    -- configuration environment. The 'Credentials' parameter is used to specify
-    -- mechanism for supplying or retrieving AuthN/AuthZ information.
-    -- In this case 'Discover' will cause the library to try a number of options such
-    -- as default environment variables, or an instance's IAM Profile and identity document:
-    env  <- newEnv Discover
-
-    -- The payload (and hash) for the S3 object is retrieved from a 'FilePath',
-    -- either 'hashedFile' or 'chunkedFile' can be used, with the latter ensuring
-    -- the contents of the file is enumerated exactly once, during send:
-    body <- chunkedFile defaultChunkSize "local\/path\/to\/object-payload"
-
-    -- We now run the 'AWS' computation with the overriden logger, performing the
-    -- 'PutObject' request. 'envRegion' or 'within' can be used to set the
-    -- remote AWS 'Region':
-    runResourceT $ runAWS (env & envLogger .~ lgr) $
-        within Frankfurt $
-            send (putObject "bucket-name" "object-key" body)
-@
--}
+hoistError :: MonadThrow m => Either Error a -> m a
+hoistError = either (throwingM _Error) return
 
 {- $discovery
 AuthN/AuthZ information is handled similarly to other AWS SDKs. You can read
@@ -425,8 +479,8 @@ use non-SSL localhost as the endpoint:
 
 The updated configuration is then passed to the 'Env' during setup:
 
-> e <- newEnv Frankfurt Discover <&> configure dynamo
-> runAWS e $ do
+> e <- newEnv Discover <&> configure dynamo
+> runResourceT . runAWS e $ do
 >     -- This S3 operation will communicate with remote AWS APIs.
 >     x <- send listBuckets
 >
@@ -439,8 +493,8 @@ The updated configuration is then passed to the 'Env' during setup:
 You can also scope the 'Endpoint' modifications (or any other 'Service' configuration)
 to specific actions:
 
-> e <- newEnv Ireland Discover
-> runAWS e $ do
+> e <- newEnv Discover
+> runResourceT . runAWS e $ do
 >     -- Service operations here will communicate with AWS, even DynamoDB.
 >     x <- send listTables
 >
