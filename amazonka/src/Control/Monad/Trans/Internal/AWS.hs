@@ -36,7 +36,7 @@ module Control.Monad.Trans.Internal.AWS
     , AWSConstraint
 
     -- * Authentication and Environment
-    , newInternalEnv
+    , emptyCredentialsEnv
     , Env
     , HasEnv       (..)
     , askEnv

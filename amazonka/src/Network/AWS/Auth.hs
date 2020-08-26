@@ -118,6 +118,12 @@ data Credentials
       -- in the AWS documentation for more information.
 
     | FromWebIdentityToken
+      -- ^ Obtain credentials using a web identity token, normally supplied by
+      -- an OIDC pvodier.
+      -- See <https://docs.aws.amazon.com/STS/latest/APIReference/API_AssumeRoleWithWebIdentity.html>
+      -- and <https://aws.amazon.com/blogs/opensource/introducing-fine-grained-iam-roles-service-accounts/>
+      -- for more information
+
     | Discover
       -- ^ Attempt credentials discovery via the following steps:
       --
@@ -196,8 +202,11 @@ getAuth m = \case
                     -- proceed, check EC2 metadata for IAM information.
                     fromProfile m
 
+-- | Use OIDC token and sts:AssumeRoleWithWebIdentity call to fetch credentials
 fromWebIdentityToken :: (MonadIO m, MonadCatch m) => m (Auth, Maybe Region)
 fromWebIdentityToken = do
+  -- sts:AssumeRoleWtihIdentity doesn't require credentials, credentials
+  -- come from web token
     env <- emptyCredentialsEnv
     roleToAssume <- lookupEnvReq envAwsRoleArn <&> Text.pack
     tokenIdentityFile <- lookupEnvReq envWebIdentityTokenFile
