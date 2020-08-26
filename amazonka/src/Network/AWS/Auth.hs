@@ -218,7 +218,7 @@ fromWebIdentityToken = do
      where
         renew :: Env -> Text -> FilePath -> IO AuthEnv
         renew env roleToAssume tokenIdentityFile = do
-            token <- liftIO $ TIO.readFile tokenIdentityFile
+            token <- TIO.readFile tokenIdentityFile
             roleSessionName <- (\x -> "amazonka-" <> (Text.pack . show . systemSeconds) x) <$> getSystemTime
             let assumeRoleReq = assumeRoleWithWebIdentity roleToAssume roleSessionName token
             assumeRoleResp <- runResourceT $ runAWST env $ send assumeRoleReq
