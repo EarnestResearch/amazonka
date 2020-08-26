@@ -67,6 +67,8 @@ import Control.Monad.IO.Class
 import Control.Monad.Trans.Internal.AWS
 import Control.Monad.Trans.Maybe        (MaybeT (..))
 
+import Data.Time.Clock.System
+
 import           Network.AWS.Data.Log
 import qualified Network.AWS.EC2.Metadata                  as EC2
 import           Network.AWS.Internal.Auth
@@ -210,14 +212,15 @@ fromWebIdentityToken = do
     env <- emptyCredentialsEnv
     roleToAssume <- lookupEnvReq envAwsRoleArn <&> Text.pack
     tokenIdentityFile <- lookupEnvReq envWebIdentityTokenFile
-    token <- liftIO $ TIO.readFile tokenIdentityFile
-    auth <- liftIO $ fetchAuthInBackground (renew env roleToAssume token)
+    auth <- liftIO $ fetchAuthInBackground (renew env roleToAssume tokenIdentityFile)
     reg  <- getRegion
     return (auth, reg)
      where
-        renew :: Env -> Text -> Text -> IO AuthEnv
+        renew :: Env -> Text -> FilePath -> IO AuthEnv
         renew env roleToAssume tokenIdentityFile = do
-            let assumeRoleReq = assumeRoleWithWebIdentity roleToAssume "amazonka" tokenIdentityFile
+            token <- liftIO $ TIO.readFile tokenIdentityFile
+            roleSessionName <- (\x -> "amazonka-" <> (Text.pack . show . systemSeconds) x) <$> getSystemTime
+            let assumeRoleReq = assumeRoleWithWebIdentity roleToAssume roleSessionName token
             assumeRoleResp <- runResourceT $ runAWST env $ send assumeRoleReq
             maybe (throwM . InvalidIAMError $ "No credentials returned") pure $ assumeRoleResp ^. arwwirsCredentials
 
