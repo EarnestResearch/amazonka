@@ -1,10 +1,10 @@
 {-# LANGUAGE BangPatterns       #-}
+{-# LANGUAGE CPP                #-}
 {-# LANGUAGE DeriveDataTypeable #-}
 {-# LANGUAGE FlexibleContexts   #-}
 {-# LANGUAGE LambdaCase         #-}
 {-# LANGUAGE OverloadedStrings  #-}
 {-# LANGUAGE RecordWildCards    #-}
-{-# LANGUAGE CPP                #-}
 
 -- |
 -- Module      : Network.AWS.EC2.Metadata
@@ -58,12 +58,10 @@ module Network.AWS.EC2.Metadata
     , pendingTime
     ) where
 
-import           Control.Monad
 import           Control.Monad.Catch
 import           Control.Monad.IO.Class
 import qualified Data.ByteString.Char8  as BS8
 import qualified Data.ByteString.Lazy   as LBS
-import           Data.Monoid
 import qualified Data.Text              as Text
 import           Network.AWS.Data.JSON
 import           Network.AWS.Data.Time
@@ -452,10 +450,10 @@ instance ToJSON IdentityDocument where
 identity :: (MonadIO m, MonadThrow m)
          => Manager
          -> m (Either String IdentityDocument)
-identity m = (eitherDecode . LBS.fromStrict) `liftM` dynamic m Document
+identity m = eitherDecode . LBS.fromStrict <$> dynamic m Document
 
 get :: (MonadIO m, MonadThrow m) => Manager -> Text -> m ByteString
-get m url = liftIO (strip `liftM` request m url)
+get m url = liftIO (strip <$> request m url)
   where
     strip bs
         | BS8.isSuffixOf "\n" bs = BS8.init bs

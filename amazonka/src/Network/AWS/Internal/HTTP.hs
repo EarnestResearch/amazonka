@@ -1,12 +1,11 @@
 {-# LANGUAGE BangPatterns      #-}
+{-# LANGUAGE CPP               #-}
 {-# LANGUAGE FlexibleContexts  #-}
-{-# LANGUAGE LambdaCase        #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE RankNTypes        #-}
 {-# LANGUAGE RecordWildCards   #-}
 {-# LANGUAGE TypeFamilies      #-}
 {-# LANGUAGE ViewPatterns      #-}
-{-# LANGUAGE CPP #-} -- b/w compat for http-client < 2.3.0
 
 -- |
 -- Module      : Network.AWS.Internal.HTTP
@@ -23,7 +22,8 @@ module Network.AWS.Internal.HTTP
 
 import Control.Arrow                (first)
 import Control.Monad
-import Control.Monad.Catch (MonadThrow, MonadCatch, Handler(Handler), catches)
+import Control.Monad.Catch          (Handler (Handler), MonadCatch, MonadThrow,
+                                     catches)
 import Control.Monad.IO.Class
 import Control.Monad.Reader
 import Control.Monad.Trans.Resource
@@ -34,16 +34,15 @@ import Data.Monoid
 import Data.Proxy
 import Data.Time
 
-import Network.AWS.Env
+import Network.AWS.Internal.Env
 import Network.AWS.Internal.Logger
-import Network.AWS.Lens            ((%~), (&), (^.), (^?))
-import Network.AWS.Lens            (to, view, _Just)
+import Network.AWS.Lens            (to, view, (%~), (&), (^.), (^?), _Just)
 import Network.AWS.Prelude
 import Network.AWS.Waiter
 import Network.HTTP.Conduit        hiding (Proxy, Request, Response)
 #if MIN_VERSION_http_conduit(2, 3, 0)
 #else
-import Data.Conduit (unwrapResumable, addCleanup)
+import Data.Conduit (addCleanup, unwrapResumable)
 #endif
 
 retrier :: ( MonadThrow m
@@ -157,7 +156,7 @@ perform Env{..} x = catches go handlers
         Right <$> response _envLogger (_rqService x) (p x) rs
 
     handlers =
-        [ Handler $ err
+        [ Handler err
         , Handler $ err . TransportError
         ]
       where
