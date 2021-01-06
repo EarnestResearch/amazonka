@@ -44,6 +44,7 @@ library
         -fwarn-incomplete-uni-patterns
         -fwarn-incomplete-record-updates
         -funbox-strict-fields
+        -optP-Wno-nonportable-include-path
 
     exposed-modules:
           Control.Monad.Trans.AWS
@@ -84,6 +85,9 @@ library
         , transformers-compat >= 0.3
         , unliftio-core       >= 0.1
         , void                >= 0.1
+        
+    if os(darwin)
+        ghc-options: -optP-Wno-nonportable-include-path
 
 test-suite tests
     type:              exitcode-stdio-1.0

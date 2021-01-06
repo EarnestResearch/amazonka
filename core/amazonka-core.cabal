@@ -39,6 +39,7 @@ library
         -fwarn-incomplete-uni-patterns
         -fwarn-incomplete-record-updates
         -funbox-strict-fields
+        -optP-Wno-nonportable-include-path
 
     exposed-modules:
           Network.AWS.Compat.Locale
@@ -106,6 +107,9 @@ library
         , unordered-containers >= 0.2.7
         , xml-conduit          >= 1.7.0.1
         , xml-types            >= 0.3.4
+        
+    if os(darwin)
+        ghc-options: -optP-Wno-nonportable-include-path
 
     if !impl(ghc>=7.9)
         build-depends:

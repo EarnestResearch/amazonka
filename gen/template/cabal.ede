@@ -62,6 +62,9 @@ library
         , {{ dep.value }}
       {% endfor %}
 
+    if os(darwin)
+        ghc-options: -optP-Wno-nonportable-include-path
+
 test-suite {{ libraryName }}-test
     type:              exitcode-stdio-1.0
     default-language:  Haskell2010
