@@ -64,6 +64,7 @@ executable amazonka-gen
         -Wall
         -fwarn-incomplete-uni-patterns
         -fwarn-incomplete-record-updates
+        -optP-Wno-nonportable-include-path
 
     build-depends:
           aeson                >= 1.2
@@ -102,3 +103,6 @@ executable amazonka-gen
         , unexceptionalio      <  0.4
         , unordered-containers
         , xml-conduit
+
+    if os(darwin)
+        ghc-options: -optP-Wno-nonportable-include-path
