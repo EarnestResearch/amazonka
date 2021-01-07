@@ -64,7 +64,6 @@ executable amazonka-gen
         -Wall
         -fwarn-incomplete-uni-patterns
         -fwarn-incomplete-record-updates
-        -optP-Wno-nonportable-include-path
 
     build-depends:
           aeson                >= 1.2

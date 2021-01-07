@@ -44,7 +44,6 @@ library
         -fwarn-incomplete-uni-patterns
         -fwarn-incomplete-record-updates
         -funbox-strict-fields
-        -optP-Wno-nonportable-include-path
 
     exposed-modules:
           Control.Monad.Trans.AWS
