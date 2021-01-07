@@ -1,7 +1,7 @@
 SHELL     := /usr/bin/env bash
 TOP_DIR   := ..
-MODEL_DIR := model
-OUT_DIR   := ..
+MODEL_DIR := $(PWD)/model
+OUT_DIR   := $(PWD)/..
 BIN_DIR   := ../bin
 GENERATE  := $(BIN_DIR)/amazonka-gen
 BRITTANY  := $(BIN_DIR)/brittany
@@ -30,10 +30,10 @@ gen: $(MODEL_DIR) $(GENERATE)
  --library-version=$(VERSION) \
  --client-version=$(CLIENT_VERSION) \
  --core-version=$(CORE_VERSION) \
- --annexes=annex \
- --configs=config \
- --templates=template \
- --static=static \
+ --annexes=$(PWD)/annex \
+ --configs=$(PWD)/config \
+ --templates=$(PWD)/template \
+ --static=$(PWD)/static \
  --retry=$(MODEL_DIR)/_retry.json \
  $(addprefix --model=,$(MODELS))
 
