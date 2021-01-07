@@ -1,4 +1,5 @@
 /accessanalyzer/
+/amp/
 /amplify/
 /apigatewayv2/
 /appconfig/

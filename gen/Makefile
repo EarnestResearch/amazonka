@@ -1,6 +1,7 @@
 SHELL     := /usr/bin/env bash
 TOP_DIR   := ..
-MODEL_DIR := $(PWD)/model
+MODEL_DIR := model
+MODEL_ABSOLUTE_DIR := $(PWD)/model
 OUT_DIR   := $(PWD)/..
 BIN_DIR   := ../bin
 GENERATE  := $(BIN_DIR)/amazonka-gen
@@ -15,7 +16,7 @@ VERSION        = $(shell sed -n 's/^version: *\(.*\)$$/\1/p' amazonka-gen.cabal)
 CORE_VERSION   = $(call version,$(TOP_DIR)/core/amazonka-core.cabal)
 CLIENT_VERSION = $(call version,$(TOP_DIR)/gen/amazonka-gen.cabal)
 
-MODELS ?= $(sort $(dir $(wildcard $(MODEL_DIR)/*/*)))
+MODELS ?= $(sort $(dir $(wildcard $(MODEL_ABSOLUTE_DIR)/*/*)))
 
 .PHONY: gen format $(GENERATE)
 
@@ -34,7 +35,7 @@ gen: $(MODEL_DIR) $(GENERATE)
  --configs=$(PWD)/config \
  --templates=$(PWD)/template \
  --static=$(PWD)/static \
- --retry=$(MODEL_DIR)/_retry.json \
+ --retry=$(MODEL_ABSOLUTE_DIR)/_retry.json \
  $(addprefix --model=,$(MODELS))
 
 format: $(STYLISH)
